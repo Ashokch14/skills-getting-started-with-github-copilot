@@ -5,11 +5,17 @@ A super simple FastAPI application that allows students to view and sign up
 for extracurricular activities at Mergington High School.
 """
 
-from fastapi import FastAPI, HTTPException
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse
 import os
 from pathlib import Path
+
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
+
+
+def normalize_email(email: str) -> str:
+    """Normalize email values for consistent validation and storage."""
+    return email.strip().lower()
 
 app = FastAPI(title="Mergington High School API",
               description="API for viewing and signing up for extracurricular activities")
@@ -90,33 +96,40 @@ def get_activities():
 
 @app.post("/activities/{activity_name}/signup")
 def signup_for_activity(activity_name: str, email: str):
-    """Sign up a student for an activity"""
-    # Validate activity exists
+    """Sign up a student for an activity."""
     if activity_name not in activities:
         raise HTTPException(status_code=404, detail="Activity not found")
 
-    # Get the specific activity
     activity = activities[activity_name]
+    normalized_email = normalize_email(email)
 
+    if not normalized_email:
+        raise HTTPException(status_code=400, detail="Email is required")
 
-    # Validate student is not already signed up    
-    if email in activity["participants"]:
+    normalized_participants = [normalize_email(participant) for participant in activity["participants"]]
+    if normalized_email in normalized_participants:
         raise HTTPException(status_code=400, detail="Student is already signed up for this activity")
 
-    # Add student
-    activity["participants"].append(email)
-    return {"message": f"Signed up {email} for {activity_name}"}
+    if len(activity["participants"]) >= activity["max_participants"]:
+        raise HTTPException(status_code=400, detail="Activity is full")
+
+    activity["participants"].append(normalized_email)
+    return {"message": f"Signed up {normalized_email} for {activity_name}"}
 
 
 @app.delete("/activities/{activity_name}/participants/{email}")
 def remove_participant(activity_name: str, email: str):
-    """Unregister a student from an activity"""
+    """Unregister a student from an activity."""
     if activity_name not in activities:
         raise HTTPException(status_code=404, detail="Activity not found")
 
     activity = activities[activity_name]
-    if email not in activity["participants"]:
+    normalized_email = normalize_email(email)
+    normalized_participants = [normalize_email(participant) for participant in activity["participants"]]
+
+    if normalized_email not in normalized_participants:
         raise HTTPException(status_code=404, detail="Participant not found")
 
-    activity["participants"].remove(email)
-    return {"message": f"Unregistered {email} from {activity_name}"}
+    participant_index = normalized_participants.index(normalized_email)
+    activity["participants"].pop(participant_index)
+    return {"message": f"Unregistered {normalized_email} from {activity_name}"}
